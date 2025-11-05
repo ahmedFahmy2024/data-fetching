@@ -41,3 +41,7 @@ yarn-error.log*
 next-env.d.ts
 .mcp.json
 docs
+.kiro
+/.kiro/
+.vscode
+CLAUDE.md
