@@ -1,17 +1,14 @@
-import { pgTable, varchar } from "drizzle-orm/pg-core";
-import { createdAt, updatedAt } from "../schemaHelpers";
-import { relations } from "drizzle-orm";
-import { JobInfoTable } from "./jobInfo";
+import { pgTable, text } from "drizzle-orm/pg-core";
+import { createdAt, id, updatedAt } from "../schemaHelpers";
 
-export const UserTable = pgTable("users", {
-  id: varchar().primaryKey(),
-  email: varchar().notNull().unique(),
-  name: varchar().notNull().unique(),
-  imageUrl: varchar().notNull(),
+export const users = pgTable("users", {
+  id,
   createdAt,
   updatedAt,
+  name: text("name").notNull(),
+  email: text("email").notNull().unique(),
+  passwordHash: text("password_hash").notNull(),
 });
 
-export const userRelations = relations(UserTable, ({ many }) => ({
-  jobInfos: many(JobInfoTable),
-}));
+export type User = typeof users.$inferSelect;
+export type NewUser = typeof users.$inferInsert;
