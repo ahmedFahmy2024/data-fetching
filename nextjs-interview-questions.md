@@ -3352,3 +3352,1974 @@ This comprehensive guide covers all major topics in Next.js 16:
 - [Next.js Documentation](https://nextjs.org/docs)
 - [Next.js GitHub](https://github.com/vercel/next.js)
 - [Next.js Examples](https://github.com/vercel/next.js/tree/canary/examples)
+
+---
+
+## Environment Variables & Configuration
+
+### Q68: How do you configure environment variables in Next.js?
+
+**Answer:**
+
+**1. .env files:**
+
+```bash
+# .env.local (not committed to git)
+DATABASE_URL=postgresql://localhost:5432/mydb
+API_KEY=secret_key
+
+# .env (committed to git, defaults)
+NEXT_PUBLIC_API_URL=https://api.example.com
+```
+
+**2. Public variables (exposed to browser):**
+
+```bash
+# Prefix with NEXT_PUBLIC_
+NEXT_PUBLIC_ANALYTICS_ID=abcdefghijk
+NEXT_PUBLIC_API_URL=https://api.example.com
+```
+
+```typescript
+// Accessible in browser
+export default function Page() {
+  return <div>API: {process.env.NEXT_PUBLIC_API_URL}</div>;
+}
+```
+
+**3. Server-only variables:**
+
+```typescript
+// Only accessible in Server Components, API Routes, Server Actions
+export default async function Page() {
+  const db = await connectDB({
+    host: process.env.DB_HOST,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASS,
+  });
+}
+```
+
+**4. Runtime environment variables:**
+
+```typescript
+import { connection } from "next/server";
+
+export default async function Component() {
+  await connection(); // Opt into dynamic rendering
+
+  // Evaluated at runtime, not build time
+  const value = process.env.MY_VALUE;
+  return <div>{value}</div>;
+}
+```
+
+**5. Reference other variables:**
+
+```bash
+# .env
+TWITTER_USER=nextjs
+TWITTER_URL=https://x.com/$TWITTER_USER
+```
+
+### Q69: How do you load environment variables in tests or external tools?
+
+**Answer:**
+Use `@next/env` package:
+
+```bash
+npm install @next/env
+```
+
+**Jest setup:**
+
+```javascript
+// jest.setup.js
+import { loadEnvConfig } from "@next/env";
+
+export default async () => {
+  const projectDir = process.cwd();
+  loadEnvConfig(projectDir);
+};
+```
+
+**ORM configuration:**
+
+```typescript
+// drizzle.config.ts
+import { loadEnvConfig } from "@next/env";
+import { defineConfig } from "drizzle-orm";
+
+loadEnvConfig(process.cwd());
+
+export default defineConfig({
+  dbCredentials: {
+    connectionString: process.env.DATABASE_URL!,
+  },
+});
+```
+
+### Q70: How do you enable typed environment variables?
+
+**Answer:**
+Enable experimental typed environment variables:
+
+```typescript
+// next.config.ts
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  experimental: {
+    typedEnv: true,
+  },
+};
+
+export default nextConfig;
+```
+
+This generates `.next/types/env.d.ts` with TypeScript definitions for your environment variables, providing IntelliSense support.
+
+---
+
+## Font Optimization
+
+### Q71: How do you optimize fonts in Next.js?
+
+**Answer:**
+
+**1. Google Fonts:**
+
+```typescript
+import { Inter, Roboto } from "next/font/google";
+
+// Variable font (no weight needed)
+const inter = Inter({
+  subsets: ["latin"],
+  display: "swap",
+});
+
+// Non-variable font (weight required)
+const roboto = Roboto({
+  weight: ["400", "700"],
+  subsets: ["latin"],
+  display: "swap",
+});
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <html lang="en" className={inter.className}>
+      <body>{children}</body>
+    </html>
+  );
+}
+```
+
+**2. Local fonts:**
+
+```typescript
+import localFont from "next/font/local";
+
+const myFont = localFont({
+  src: "./my-font.woff2",
+  display: "swap",
+});
+
+// Multiple font files
+const roboto = localFont({
+  src: [
+    {
+      path: "./Roboto-Regular.woff2",
+      weight: "400",
+      style: "normal",
+    },
+    {
+      path: "./Roboto-Bold.woff2",
+      weight: "700",
+      style: "normal",
+    },
+  ],
+});
+```
+
+**3. Apply fonts with className:**
+
+```typescript
+<html lang="en" className={inter.className}>
+```
+
+**4. Apply fonts with style:**
+
+```typescript
+<p style={inter.style}>Hello World</p>
+```
+
+**5. Multiple fonts:**
+
+```typescript
+import { Inter, Roboto_Mono } from "next/font/google";
+
+const inter = Inter({ subsets: ["latin"] });
+const robotoMono = Roboto_Mono({ subsets: ["latin"] });
+
+export default function Page() {
+  return (
+    <div>
+      <h1 className={inter.className}>Heading</h1>
+      <code className={robotoMono.className}>Code block</code>
+    </div>
+  );
+}
+```
+
+**Benefits:**
+
+- Automatic self-hosting (no requests to Google)
+- Zero layout shift with automatic font optimization
+- Preloading for better performance
+- Subset optimization
+
+### Q72: What font optimization options are available?
+
+**Answer:**
+
+```typescript
+const inter = Inter({
+  // Character subsets to include
+  subsets: ["latin", "latin-ext"],
+
+  // Font weights (for non-variable fonts)
+  weight: ["400", "700"],
+
+  // Font styles
+  style: ["normal", "italic"],
+
+  // Font display strategy
+  display: "swap", // 'auto' | 'block' | 'swap' | 'fallback' | 'optional'
+
+  // Preload font
+  preload: true,
+
+  // Variable font axes (for variable fonts)
+  axes: ["slnt"],
+
+  // Adjust fallback font
+  adjustFontFallback: true,
+
+  // Fallback fonts
+  fallback: ["system-ui", "arial"],
+
+  // CSS variable name
+  variable: "--font-inter",
+});
+```
+
+**Using CSS variables:**
+
+```typescript
+const inter = Inter({
+  subsets: ["latin"],
+  variable: "--font-inter",
+});
+
+export default function RootLayout({ children }) {
+  return (
+    <html lang="en" className={inter.variable}>
+      <body>{children}</body>
+    </html>
+  );
+}
+```
+
+```css
+/* globals.css */
+body {
+  font-family: var(--font-inter);
+}
+```
+
+---
+
+## Script Optimization
+
+### Q73: How do you optimize third-party scripts?
+
+**Answer:**
+
+**1. Script loading strategies:**
+
+```typescript
+import Script from "next/script";
+
+export default function Page() {
+  return (
+    <>
+      {/* Load before page becomes interactive */}
+      <Script
+        src="https://example.com/script.js"
+        strategy="beforeInteractive"
+      />
+
+      {/* Load after page becomes interactive (default) */}
+      <Script src="https://example.com/script.js" strategy="afterInteractive" />
+
+      {/* Load during browser idle time */}
+      <Script src="https://example.com/script.js" strategy="lazyOnload" />
+
+      {/* Load in web worker (requires Partytown) */}
+      <Script src="https://example.com/script.js" strategy="worker" />
+    </>
+  );
+}
+```
+
+**2. Inline scripts:**
+
+```typescript
+<Script id="show-banner">
+  {`document.getElementById('banner').classList.remove('hidden')`}
+</Script>
+
+// Or with dangerouslySetInnerHTML
+<Script
+  id="show-banner"
+  dangerouslySetInnerHTML={{
+    __html: `document.getElementById('banner').classList.remove('hidden')`,
+  }}
+/>
+```
+
+**3. Script events:**
+
+```typescript
+"use client";
+
+import Script from "next/script";
+
+export default function Page() {
+  return (
+    <Script
+      src="https://example.com/script.js"
+      onLoad={() => {
+        console.log("Script loaded");
+      }}
+      onError={(e) => {
+        console.error("Script failed to load", e);
+      }}
+      onReady={() => {
+        console.log("Script ready");
+      }}
+    />
+  );
+}
+```
+
+**4. Global scripts in layout:**
+
+```typescript
+// app/layout.tsx
+import Script from "next/script";
+
+export default function RootLayout({ children }) {
+  return (
+    <html lang="en">
+      <body>{children}</body>
+      <Script src="https://example.com/analytics.js" />
+    </html>
+  );
+}
+```
+
+**5. Web Worker strategy (Partytown):**
+
+```javascript
+// next.config.js
+module.exports = {
+  experimental: {
+    nextScriptWorkers: true,
+  },
+};
+```
+
+```typescript
+<Script src="https://example.com/script.js" strategy="worker" />
+```
+
+### Q74: How do you add custom attributes to scripts?
+
+**Answer:**
+
+```typescript
+import Script from "next/script";
+
+export default function Page() {
+  return (
+    <Script
+      src="https://example.com/script.js"
+      id="example-script"
+      nonce="XUENAJFW"
+      data-test="script"
+      crossOrigin="anonymous"
+      referrerPolicy="no-referrer"
+    />
+  );
+}
+```
+
+**With CSP nonce:**
+
+```typescript
+import { headers } from "next/headers";
+import Script from "next/script";
+
+export default async function Page() {
+  const nonce = (await headers()).get("x-nonce");
+
+  return (
+    <Script
+      src="https://www.googletagmanager.com/gtag/js"
+      strategy="afterInteractive"
+      nonce={nonce}
+    />
+  );
+}
+```
+
+---
+
+## Security & Headers
+
+### Q75: How do you implement Content Security Policy (CSP)?
+
+**Answer:**
+
+**1. Without nonces (static):**
+
+```javascript
+// next.config.js
+const cspHeader = `
+  default-src 'self';
+  script-src 'self' 'unsafe-eval' 'unsafe-inline';
+  style-src 'self' 'unsafe-inline';
+  img-src 'self' blob: data:;
+  font-src 'self';
+  object-src 'none';
+  base-uri 'self';
+  form-action 'self';
+  frame-ancestors 'none';
+  upgrade-insecure-requests;
+`;
+
+module.exports = {
+  async headers() {
+    return [
+      {
+        source: "/(.*)",
+        headers: [
+          {
+            key: "Content-Security-Policy",
+            value: cspHeader.replace(/\n/g, ""),
+          },
+        ],
+      },
+    ];
+  },
+};
+```
+
+**2. With nonces (dynamic):**
+
+```typescript
+// proxy.ts
+import { NextRequest, NextResponse } from "next/server";
+
+export function proxy(request: NextRequest) {
+  const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
+  const isDev = process.env.NODE_ENV === "development";
+
+  const cspHeader = `
+    default-src 'self';
+    script-src 'self' 'nonce-${nonce}' 'strict-dynamic' ${
+    isDev ? "'unsafe-eval'" : ""
+  };
+    style-src 'self' ${isDev ? "'unsafe-inline'" : `'nonce-${nonce}'`};
+    img-src 'self' blob: data:;
+    font-src 'self';
+    object-src 'none';
+    base-uri 'self';
+    form-action 'self';
+    frame-ancestors 'none';
+    upgrade-insecure-requests;
+  `;
+
+  const contentSecurityPolicyHeaderValue = cspHeader
+    .replace(/\s{2,}/g, " ")
+    .trim();
+
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set("x-nonce", nonce);
+  requestHeaders.set(
+    "Content-Security-Policy",
+    contentSecurityPolicyHeaderValue
+  );
+
+  const response = NextResponse.next({
+    request: { headers: requestHeaders },
+  });
+
+  response.headers.set(
+    "Content-Security-Policy",
+    contentSecurityPolicyHeaderValue
+  );
+
+  return response;
+}
+```
+
+**3. Use nonce in components:**
+
+```typescript
+// app/page.tsx
+import { headers } from "next/headers";
+import Script from "next/script";
+
+export default async function Page() {
+  const nonce = (await headers()).get("x-nonce");
+
+  return (
+    <Script
+      src="https://www.googletagmanager.com/gtag/js"
+      strategy="afterInteractive"
+      nonce={nonce}
+    />
+  );
+}
+```
+
+**4. CSP with third-party domains:**
+
+```typescript
+const cspHeader = `
+  default-src 'self';
+  script-src 'self' 'nonce-${nonce}' 'strict-dynamic' https://www.googletagmanager.com;
+  connect-src 'self' https://www.google-analytics.com;
+  img-src 'self' data: https://www.google-analytics.com;
+`;
+```
+
+**5. CSP with Subresource Integrity (SRI):**
+
+```javascript
+// next.config.js
+module.exports = {
+  experimental: {
+    sri: {
+      algorithm: "sha256",
+    },
+  },
+  async headers() {
+    return [
+      {
+        source: "/(.*)",
+        headers: [
+          {
+            key: "Content-Security-Policy",
+            value: `script-src 'self';`,
+          },
+        ],
+      },
+    ];
+  },
+};
+```
+
+### Q76: What other security headers should you configure?
+
+**Answer:**
+
+```javascript
+// next.config.js
+module.exports = {
+  async headers() {
+    return [
+      {
+        source: "/(.*)",
+        headers: [
+          // Prevent MIME type sniffing
+          {
+            key: "X-Content-Type-Options",
+            value: "nosniff",
+          },
+          // Prevent clickjacking
+          {
+            key: "X-Frame-Options",
+            value: "DENY", // or 'SAMEORIGIN'
+          },
+          // Control referrer information
+          {
+            key: "Referrer-Policy",
+            value: "strict-origin-when-cross-origin",
+          },
+          // Enable browser XSS protection
+          {
+            key: "X-XSS-Protection",
+            value: "1; mode=block",
+          },
+          // Enforce HTTPS
+          {
+            key: "Strict-Transport-Security",
+            value: "max-age=31536000; includeSubDomains",
+          },
+          // Control browser features
+          {
+            key: "Permissions-Policy",
+            value: "camera=(), microphone=(), geolocation=()",
+          },
+        ],
+      },
+    ];
+  },
+};
+```
+
+**Service Worker headers:**
+
+```javascript
+{
+  source: '/sw.js',
+  headers: [
+    {
+      key: 'Content-Type',
+      value: 'application/javascript; charset=utf-8',
+    },
+    {
+      key: 'Cache-Control',
+      value: 'no-cache, no-store, must-revalidate',
+    },
+    {
+      key: 'Content-Security-Policy',
+      value: "default-src 'self'; script-src 'self'",
+    },
+  ],
+}
+```
+
+### Q77: How do you implement secure header filtering in proxy?
+
+**Answer:**
+
+```typescript
+// proxy.ts
+import { type NextRequest, NextResponse } from "next/server";
+
+export function proxy(request: NextRequest) {
+  const incoming = new Headers(request.headers);
+  const forwarded = new Headers();
+
+  // Allow-list pattern: only keep known-safe headers
+  for (const [name, value] of incoming) {
+    const headerName = name.toLowerCase();
+
+    // Discard sensitive headers
+    if (
+      !headerName.startsWith("x-") &&
+      headerName !== "authorization" &&
+      headerName !== "cookie"
+    ) {
+      // Preserve original header name casing
+      forwarded.set(name, value);
+    }
+  }
+
+  return NextResponse.next({
+    request: {
+      headers: forwarded,
+    },
+  });
+}
+```
+
+**Benefits:**
+
+- Prevents header injection attacks
+- Removes sensitive information
+- Follows principle of least privilege
+
+---
+
+## Production & Deployment
+
+### Q78: How do you build and deploy a Next.js application?
+
+**Answer:**
+
+**1. Build for production:**
+
+```bash
+npm run build
+# or
+npx next build
+```
+
+**Build output:**
+
+```
+Route (app)                              Size     First Load JS
+┌ ○ /                                    5.2 kB         87.4 kB
+├ ○ /about                               142 B          85.3 kB
+└ ƒ /blog/[slug]                         1.4 kB         86.7 kB
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand
+```
+
+**2. Start production server:**
+
+```bash
+npm start
+# or
+npx next start
+```
+
+**3. Custom port and hostname:**
+
+```bash
+next start -p 8080 -H localhost
+```
+
+**4. Package.json scripts:**
+
+```json
+{
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  }
+}
+```
+
+### Q79: What build options are available?
+
+**Answer:**
+
+**Debug build:**
+
+```bash
+next build --debug
+```
+
+**Profile React:**
+
+```bash
+next build --profile
+```
+
+**Debug prerender errors:**
+
+```bash
+next build --debug-prerender
+```
+
+**Build specific paths:**
+
+```bash
+next build --debug-build-paths="/blog/*"
+```
+
+**Disable linting:**
+
+```bash
+next build --no-lint
+```
+
+**Use Turbopack:**
+
+```bash
+next build --turbopack
+```
+
+**Use Webpack:**
+
+```bash
+next build --webpack
+```
+
+### Q80: How do you configure consistent build IDs for containers?
+
+**Answer:**
+
+```javascript
+// next.config.js
+module.exports = {
+  generateBuildId: async () => {
+    // Use git hash for consistent builds
+    return process.env.GIT_HASH;
+  },
+};
+```
+
+**Why this matters:**
+
+- Multiple containers use the same build version
+- Prevents version skew in distributed systems
+- Ensures consistent behavior across instances
+
+### Q81: How do you disable TypeScript errors in production builds?
+
+**Answer:**
+
+```typescript
+// next.config.ts
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  typescript: {
+    // ⚠️ WARNING: Allows production builds with type errors
+    ignoreBuildErrors: true,
+  },
+};
+
+export default nextConfig;
+```
+
+**Note:** Only use this if you have type checking in your CI/CD pipeline.
+
+### Q82: How do you configure build cache for CI/CD?
+
+**Answer:**
+
+**GitHub Actions:**
+
+```yaml
+# .github/workflows/ci.yml
+- uses: actions/cache@v3
+  with:
+    path: |
+      ~/.npm
+      ${{ github.workspace }}/.next/cache
+    key: ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-${{ hashFiles('**/*.js', '**/*.jsx', '**/*.ts', '**/*.tsx') }}
+    restore-keys: |
+      ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-
+```
+
+**Travis CI:**
+
+```yaml
+# .travis.yml
+cache:
+  directories:
+    - $HOME/.cache/yarn
+    - node_modules
+    - .next/cache
+```
+
+**Heroku:**
+
+```json
+// package.json
+{
+  "cacheDirectories": [".next/cache"]
+}
+```
+
+### Q83: How do you implement custom build hooks?
+
+**Answer:**
+
+```javascript
+// next.config.js
+module.exports = {
+  compiler: {
+    runAfterProductionCompile: async ({ distDir, projectDir }) => {
+      // Custom post-build logic
+      console.log("Build completed!");
+      console.log("Output directory:", distDir);
+      console.log("Project directory:", projectDir);
+
+      // Example: Upload sourcemaps to error tracking service
+      await uploadSourcemaps(distDir);
+    },
+  },
+};
+```
+
+**Use cases:**
+
+- Upload sourcemaps to error tracking
+- Generate build reports
+- Notify deployment services
+- Run custom validation
+
+---
+
+## Performance Optimization Deep Dive
+
+### Q84: How do you implement lazy loading and code splitting?
+
+**Answer:**
+
+**1. Dynamic imports for components:**
+
+```typescript
+import dynamic from "next/dynamic";
+
+// Basic lazy loading
+const DynamicComponent = dynamic(() => import("./HeavyComponent"));
+
+// With loading state
+const DynamicComponent = dynamic(() => import("./HeavyComponent"), {
+  loading: () => <p>Loading...</p>,
+});
+
+// Disable SSR for client-only components
+const DynamicComponent = dynamic(() => import("./HeavyComponent"), {
+  ssr: false,
+});
+
+// Named exports
+const DynamicComponent = dynamic(() =>
+  import("./components").then((mod) => mod.HeavyComponent)
+);
+```
+
+**2. Conditional loading:**
+
+```typescript
+"use client";
+
+import { useState } from "react";
+import dynamic from "next/dynamic";
+
+const ComponentA = dynamic(() => import("./ComponentA"));
+const ComponentB = dynamic(() => import("./ComponentB"));
+
+export default function Page() {
+  const [showMore, setShowMore] = useState(false);
+
+  return (
+    <div>
+      <ComponentA />
+      {showMore && <ComponentB />}
+      <button onClick={() => setShowMore(!showMore)}>Toggle</button>
+    </div>
+  );
+}
+```
+
+**3. Optimize package imports:**
+
+```javascript
+// next.config.js
+module.exports = {
+  experimental: {
+    optimizePackageImports: ["lodash", "date-fns", "@mui/material"],
+  },
+};
+```
+
+**Before:**
+
+```typescript
+import { debounce } from "lodash"; // Imports entire lodash
+```
+
+**After (with optimization):**
+
+```typescript
+import { debounce } from "lodash"; // Only imports debounce
+```
+
+### Q85: How do you implement streaming and Suspense effectively?
+
+**Answer:**
+
+**1. Route-level loading:**
+
+```typescript
+// app/dashboard/loading.tsx
+export default function Loading() {
+  return <DashboardSkeleton />;
+}
+```
+
+**2. Component-level Suspense:**
+
+```typescript
+import { Suspense } from "react";
+
+export default function Dashboard() {
+  return (
+    <div>
+      <h1>Dashboard</h1>
+
+      {/* Independent loading states */}
+      <Suspense fallback={<UserSkeleton />}>
+        <UserProfile />
+      </Suspense>
+
+      <Suspense fallback={<StatsSkeleton />}>
+        <Stats />
+      </Suspense>
+
+      <Suspense fallback={<ChartSkeleton />}>
+        <Chart />
+      </Suspense>
+    </div>
+  );
+}
+
+async function UserProfile() {
+  const user = await fetchUser();
+  return <div>{user.name}</div>;
+}
+
+async function Stats() {
+  const stats = await fetchStats();
+  return <div>{stats.total}</div>;
+}
+
+async function Chart() {
+  const data = await fetchChartData();
+  return <ChartComponent data={data} />;
+}
+```
+
+**3. Nested Suspense boundaries:**
+
+```typescript
+export default function Page() {
+  return (
+    <Suspense fallback={<PageSkeleton />}>
+      <MainContent>
+        <Suspense fallback={<SidebarSkeleton />}>
+          <Sidebar />
+        </Suspense>
+
+        <Suspense fallback={<ContentSkeleton />}>
+          <Content />
+        </Suspense>
+      </MainContent>
+    </Suspense>
+  );
+}
+```
+
+**Benefits:**
+
+- Faster Time to First Byte (TTFB)
+- Progressive rendering
+- Better perceived performance
+- Independent loading states
+
+### Q86: How do you optimize bundle size?
+
+**Answer:**
+
+**1. Analyze bundle:**
+
+```bash
+npm run build -- --profile
+```
+
+**2. Use bundle analyzer:**
+
+```bash
+npm install @next/bundle-analyzer
+```
+
+```javascript
+// next.config.js
+const withBundleAnalyzer = require("@next/bundle-analyzer")({
+  enabled: process.env.ANALYZE === "true",
+});
+
+module.exports = withBundleAnalyzer({
+  // Your Next.js config
+});
+```
+
+```bash
+ANALYZE=true npm run build
+```
+
+**3. Tree shaking:**
+
+```typescript
+// ❌ Bad: Imports entire library
+import _ from "lodash";
+
+// ✅ Good: Imports only what's needed
+import debounce from "lodash/debounce";
+```
+
+**4. Remove unused dependencies:**
+
+```bash
+npm prune
+```
+
+**5. Use production builds:**
+
+```bash
+NODE_ENV=production npm run build
+```
+
+**6. Optimize images:**
+
+```typescript
+import Image from "next/image";
+
+<Image
+  src="/large-image.jpg"
+  alt="Optimized"
+  width={800}
+  height={600}
+  quality={75} // Lower quality for smaller size
+  placeholder="blur"
+/>;
+```
+
+**7. Minimize client components:**
+
+```typescript
+// ❌ Bad: Entire page is client component
+"use client";
+
+export default function Page() {
+  const [count, setCount] = useState(0);
+  return (
+    <div>
+      <Header /> {/* Doesn't need client */}
+      <button onClick={() => setCount(count + 1)}>{count}</button>
+      <Footer /> {/* Doesn't need client */}
+    </div>
+  );
+}
+
+// ✅ Good: Only interactive part is client
+export default function Page() {
+  return (
+    <div>
+      <Header />
+      <Counter />
+      <Footer />
+    </div>
+  );
+}
+
+// counter.tsx
+("use client");
+function Counter() {
+  const [count, setCount] = useState(0);
+  return <button onClick={() => setCount(count + 1)}>{count}</button>;
+}
+```
+
+### Q87: How do you implement prefetching strategies?
+
+**Answer:**
+
+**1. Automatic prefetching with Link:**
+
+```typescript
+import Link from 'next/link'
+
+// Prefetch on hover (default)
+<Link href="/dashboard" prefetch={true}>
+  Dashboard
+</Link>
+
+// Disable prefetching
+<Link href="/dashboard" prefetch={false}>
+  Dashboard
+</Link>
+```
+
+**2. Manual prefetching:**
+
+```typescript
+"use client";
+
+import { useRouter } from "next/navigation";
+import { useEffect } from "react";
+
+export default function Page() {
+  const router = useRouter();
+
+  useEffect(() => {
+    // Prefetch on mount
+    router.prefetch("/dashboard");
+  }, [router]);
+
+  return <button onClick={() => router.push("/dashboard")}>Go</button>;
+}
+```
+
+**3. Conditional prefetching:**
+
+```typescript
+"use client";
+
+import Link from "next/link";
+
+export default function Navigation({ isPremium }) {
+  return (
+    <nav>
+      <Link href="/home">Home</Link>
+      {/* Only prefetch for premium users */}
+      <Link href="/premium-features" prefetch={isPremium}>
+        Premium
+      </Link>
+    </nav>
+  );
+}
+```
+
+**4. Prefetch on interaction:**
+
+```typescript
+"use client";
+
+import { useRouter } from "next/navigation";
+
+export default function Card() {
+  const router = useRouter();
+
+  return (
+    <div
+      onMouseEnter={() => router.prefetch("/details")}
+      onClick={() => router.push("/details")}
+    >
+      Card content
+    </div>
+  );
+}
+```
+
+---
+
+## Advanced Patterns & Best Practices
+
+### Q88: How do you implement the Repository pattern with Server Components?
+
+**Answer:**
+
+```typescript
+// lib/repositories/user.repository.ts
+import { db } from "@/lib/db";
+
+export class UserRepository {
+  async findById(id: string) {
+    return await db.user.findUnique({ where: { id } });
+  }
+
+  async findByEmail(email: string) {
+    return await db.user.findUnique({ where: { email } });
+  }
+
+  async create(data: CreateUserInput) {
+    return await db.user.create({ data });
+  }
+
+  async update(id: string, data: UpdateUserInput) {
+    return await db.user.update({ where: { id }, data });
+  }
+}
+
+export const userRepository = new UserRepository();
+```
+
+```typescript
+// app/users/[id]/page.tsx
+import { userRepository } from "@/lib/repositories/user.repository";
+
+export default async function UserPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
+  const user = await userRepository.findById(id);
+
+  if (!user) {
+    notFound();
+  }
+
+  return <UserProfile user={user} />;
+}
+```
+
+**Benefits:**
+
+- Separation of concerns
+- Testable data access layer
+- Reusable across Server Components and Server Actions
+- Type-safe database operations
+
+### Q89: How do you implement the Service layer pattern?
+
+**Answer:**
+
+```typescript
+// lib/services/auth.service.ts
+import { userRepository } from "@/lib/repositories/user.repository";
+import { hashPassword, verifyPassword } from "@/lib/crypto";
+import { createSession } from "@/lib/session";
+
+export class AuthService {
+  async register(email: string, password: string) {
+    const existingUser = await userRepository.findByEmail(email);
+
+    if (existingUser) {
+      throw new Error("User already exists");
+    }
+
+    const hashedPassword = await hashPassword(password);
+    const user = await userRepository.create({
+      email,
+      password: hashedPassword,
+    });
+
+    return user;
+  }
+
+  async login(email: string, password: string) {
+    const user = await userRepository.findByEmail(email);
+
+    if (!user) {
+      throw new Error("Invalid credentials");
+    }
+
+    const isValid = await verifyPassword(password, user.password);
+
+    if (!isValid) {
+      throw new Error("Invalid credentials");
+    }
+
+    const session = await createSession(user.id);
+    return { user, session };
+  }
+}
+
+export const authService = new AuthService();
+```
+
+```typescript
+// app/actions.ts
+"use server";
+
+import { authService } from "@/lib/services/auth.service";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
+
+export async function loginAction(formData: FormData) {
+  const email = formData.get("email") as string;
+  const password = formData.get("password") as string;
+
+  try {
+    const { session } = await authService.login(email, password);
+
+    const cookieStore = await cookies();
+    cookieStore.set("session", session, {
+      httpOnly: true,
+      secure: true,
+      sameSite: "lax",
+    });
+
+    redirect("/dashboard");
+  } catch (error) {
+    return { error: error.message };
+  }
+}
+```
+
+### Q90: How do you implement custom hooks for data fetching?
+
+**Answer:**
+
+```typescript
+// hooks/use-user.ts
+"use client";
+
+import useSWR from "swr";
+
+const fetcher = (url: string) => fetch(url).then((r) => r.json());
+
+export function useUser(id: string) {
+  const { data, error, isLoading, mutate } = useSWR(
+    `/api/users/${id}`,
+    fetcher,
+    {
+      revalidateOnFocus: false,
+      revalidateOnReconnect: true,
+    }
+  );
+
+  return {
+    user: data,
+    isLoading,
+    isError: error,
+    mutate,
+  };
+}
+
+export function useUsers() {
+  const { data, error, isLoading } = useSWR("/api/users", fetcher);
+
+  return {
+    users: data,
+    isLoading,
+    isError: error,
+  };
+}
+```
+
+```typescript
+// components/user-profile.tsx
+"use client";
+
+import { useUser } from "@/hooks/use-user";
+
+export function UserProfile({ userId }: { userId: string }) {
+  const { user, isLoading, isError } = useUser(userId);
+
+  if (isLoading) return <div>Loading...</div>;
+  if (isError) return <div>Error loading user</div>;
+
+  return (
+    <div>
+      <h1>{user.name}</h1>
+      <p>{user.email}</p>
+    </div>
+  );
+}
+```
+
+### Q91: How do you implement proper error boundaries hierarchy?
+
+**Answer:**
+
+```
+app/
+  error.tsx              # Global error boundary
+  layout.tsx
+  page.tsx
+  dashboard/
+    error.tsx            # Dashboard section errors
+    layout.tsx
+    page.tsx
+    settings/
+      error.tsx          # Settings-specific errors
+      page.tsx
+```
+
+**Global error boundary:**
+
+```typescript
+// app/error.tsx
+"use client";
+
+export default function Error({
+  error,
+  reset,
+}: {
+  error: Error & { digest?: string };
+  reset: () => void;
+}) {
+  return (
+    <div>
+      <h2>Something went wrong!</h2>
+      <button onClick={() => reset()}>Try again</button>
+    </div>
+  );
+}
+```
+
+**Section-specific error:**
+
+```typescript
+// app/dashboard/error.tsx
+"use client";
+
+import { useEffect } from "react";
+
+export default function DashboardError({
+  error,
+  reset,
+}: {
+  error: Error & { digest?: string };
+  reset: () => void;
+}) {
+  useEffect(() => {
+    // Log to error reporting service
+    console.error("Dashboard error:", error);
+  }, [error]);
+
+  return (
+    <div className="dashboard-error">
+      <h2>Dashboard Error</h2>
+      <p>{error.message}</p>
+      <button onClick={() => reset()}>Reload Dashboard</button>
+    </div>
+  );
+}
+```
+
+**Global error (catches layout errors):**
+
+```typescript
+// app/global-error.tsx
+"use client";
+
+export default function GlobalError({
+  error,
+  reset,
+}: {
+  error: Error & { digest?: string };
+  reset: () => void;
+}) {
+  return (
+    <html>
+      <body>
+        <h2>Application Error</h2>
+        <p>{error.message}</p>
+        <button onClick={() => reset()}>Try again</button>
+      </body>
+    </html>
+  );
+}
+```
+
+### Q92: How do you implement proper TypeScript types for Next.js?
+
+**Answer:**
+
+**1. Page props:**
+
+```typescript
+import type { Metadata } from "next";
+
+type Props = {
+  params: Promise<{ slug: string }>;
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+};
+
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const { slug } = await params;
+  return { title: slug };
+}
+
+export default async function Page({ params, searchParams }: Props) {
+  const { slug } = await params;
+  const search = await searchParams;
+
+  return <div>{slug}</div>;
+}
+```
+
+**2. Layout props:**
+
+```typescript
+export default function Layout({
+  children,
+  params,
+}: {
+  children: React.ReactNode;
+  params: Promise<{ locale: string }>;
+}) {
+  return <div>{children}</div>;
+}
+```
+
+**3. Route Handler types:**
+
+```typescript
+import { NextRequest, NextResponse } from "next/server";
+
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  return NextResponse.json({ id });
+}
+
+export async function POST(request: NextRequest) {
+  const body: { name: string; email: string } = await request.json();
+  return NextResponse.json({ success: true });
+}
+```
+
+**4. Server Action types:**
+
+```typescript
+"use server";
+
+type FormState = {
+  message: string;
+  errors?: {
+    name?: string[];
+    email?: string[];
+  };
+};
+
+export async function createUser(
+  prevState: FormState,
+  formData: FormData
+): Promise<FormState> {
+  // Implementation
+  return { message: "Success" };
+}
+```
+
+**5. Proxy types:**
+
+```typescript
+import { NextRequest, NextResponse } from "next/server";
+
+export function proxy(request: NextRequest): NextResponse {
+  return NextResponse.next();
+}
+
+export const config = {
+  matcher: ["/dashboard/:path*"],
+};
+```
+
+### Q93: How do you implement proper logging and monitoring?
+
+**Answer:**
+
+**1. Server-side logging:**
+
+```typescript
+// lib/logger.ts
+export const logger = {
+  info: (message: string, meta?: any) => {
+    console.log(
+      JSON.stringify({
+        level: "info",
+        message,
+        timestamp: new Date().toISOString(),
+        ...meta,
+      })
+    );
+  },
+
+  error: (message: string, error?: Error, meta?: any) => {
+    console.error(
+      JSON.stringify({
+        level: "error",
+        message,
+        error: error?.message,
+        stack: error?.stack,
+        timestamp: new Date().toISOString(),
+        ...meta,
+      })
+    );
+  },
+
+  warn: (message: string, meta?: any) => {
+    console.warn(
+      JSON.stringify({
+        level: "warn",
+        message,
+        timestamp: new Date().toISOString(),
+        ...meta,
+      })
+    );
+  },
+};
+```
+
+**2. Error tracking:**
+
+```typescript
+// app/error.tsx
+"use client";
+
+import { useEffect } from "react";
+import * as Sentry from "@sentry/nextjs";
+
+export default function Error({
+  error,
+  reset,
+}: {
+  error: Error & { digest?: string };
+  reset: () => void;
+}) {
+  useEffect(() => {
+    // Log to Sentry
+    Sentry.captureException(error);
+  }, [error]);
+
+  return (
+    <div>
+      <h2>Something went wrong!</h2>
+      <button onClick={() => reset()}>Try again</button>
+    </div>
+  );
+}
+```
+
+**3. Performance monitoring:**
+
+```typescript
+// app/layout.tsx
+import { SpeedInsights } from "@vercel/speed-insights/next";
+import { Analytics } from "@vercel/analytics/react";
+
+export default function RootLayout({ children }) {
+  return (
+    <html>
+      <body>
+        {children}
+        <SpeedInsights />
+        <Analytics />
+      </body>
+    </html>
+  );
+}
+```
+
+**4. Custom Web Vitals reporting:**
+
+```typescript
+// app/_components/web-vitals.tsx
+"use client";
+
+import { useReportWebVitals } from "next/web-vitals";
+
+export function WebVitals() {
+  useReportWebVitals((metric) => {
+    // Send to analytics
+    if (window.gtag) {
+      window.gtag("event", metric.name, {
+        value: Math.round(
+          metric.name === "CLS" ? metric.value * 1000 : metric.value
+        ),
+        event_label: metric.id,
+        non_interaction: true,
+      });
+    }
+  });
+
+  return null;
+}
+```
+
+```typescript
+// app/layout.tsx
+import { WebVitals } from "./_components/web-vitals";
+
+export default function RootLayout({ children }) {
+  return (
+    <html>
+      <body>
+        <WebVitals />
+        {children}
+      </body>
+    </html>
+  );
+}
+```
+
+### Q94: How do you implement proper database connection pooling?
+
+**Answer:**
+
+```typescript
+// lib/db.ts
+import { PrismaClient } from "@prisma/client";
+
+const globalForPrisma = globalThis as unknown as {
+  prisma: PrismaClient | undefined;
+};
+
+export const db =
+  globalForPrisma.prisma ??
+  new PrismaClient({
+    log:
+      process.env.NODE_ENV === "development"
+        ? ["query", "error", "warn"]
+        : ["error"],
+  });
+
+if (process.env.NODE_ENV !== "production") {
+  globalForPrisma.prisma = db;
+}
+
+// Graceful shutdown
+process.on("beforeExit", async () => {
+  await db.$disconnect();
+});
+```
+
+**Why this pattern:**
+
+- Prevents multiple Prisma instances in development (hot reload)
+- Single connection pool in production
+- Proper cleanup on shutdown
+- Development logging
+
+**Usage:**
+
+```typescript
+// app/users/page.tsx
+import { db } from "@/lib/db";
+
+export default async function UsersPage() {
+  const users = await db.user.findMany();
+
+  return (
+    <ul>
+      {users.map((user) => (
+        <li key={user.id}>{user.name}</li>
+      ))}
+    </ul>
+  );
+}
+```
+
+### Q95: How do you implement rate limiting?
+
+**Answer:**
+
+**1. Simple in-memory rate limiter:**
+
+```typescript
+// lib/rate-limit.ts
+type RateLimitStore = Map<string, { count: number; resetTime: number }>;
+
+const store: RateLimitStore = new Map();
+
+export function rateLimit(
+  identifier: string,
+  limit: number = 10,
+  window: number = 60000 // 1 minute
+): { success: boolean; remaining: number } {
+  const now = Date.now();
+  const record = store.get(identifier);
+
+  if (!record || now > record.resetTime) {
+    store.set(identifier, {
+      count: 1,
+      resetTime: now + window,
+    });
+    return { success: true, remaining: limit - 1 };
+  }
+
+  if (record.count >= limit) {
+    return { success: false, remaining: 0 };
+  }
+
+  record.count++;
+  return { success: true, remaining: limit - record.count };
+}
+```
+
+**2. Use in API routes:**
+
+```typescript
+// app/api/data/route.ts
+import { rateLimit } from "@/lib/rate-limit";
+import { NextRequest } from "next/server";
+
+export async function GET(request: NextRequest) {
+  const ip = request.ip || "unknown";
+  const { success, remaining } = rateLimit(ip, 10, 60000);
+
+  if (!success) {
+    return new Response("Too Many Requests", {
+      status: 429,
+      headers: {
+        "X-RateLimit-Remaining": "0",
+        "Retry-After": "60",
+      },
+    });
+  }
+
+  const data = await fetchData();
+
+  return Response.json(data, {
+    headers: {
+      "X-RateLimit-Remaining": remaining.toString(),
+    },
+  });
+}
+```
+
+**3. Redis-based rate limiter:**
+
+```typescript
+// lib/rate-limit-redis.ts
+import { Redis } from "@upstash/redis";
+
+const redis = new Redis({
+  url: process.env.UPSTASH_REDIS_REST_URL!,
+  token: process.env.UPSTASH_REDIS_REST_TOKEN!,
+});
+
+export async function rateLimitRedis(
+  identifier: string,
+  limit: number = 10,
+  window: number = 60
+) {
+  const key = `rate-limit:${identifier}`;
+  const count = await redis.incr(key);
+
+  if (count === 1) {
+    await redis.expire(key, window);
+  }
+
+  const ttl = await redis.ttl(key);
+
+  return {
+    success: count <= limit,
+    remaining: Math.max(0, limit - count),
+    reset: Date.now() + ttl * 1000,
+  };
+}
+```
+
+---
+
+## Final Summary & Updates
+
+This comprehensive Next.js v16 interview guide now includes **95 detailed questions** covering:
+
+### Core Topics (Q1-Q67):
+
+✅ App Router & Routing
+✅ Server & Client Components  
+✅ Data Fetching
+✅ Caching & Revalidation
+✅ SSR, SSG, ISR & PPR
+✅ Server Actions
+✅ API Routes & Route Handlers
+✅ Image Optimization
+✅ SEO & Metadata
+✅ Error Handling
+✅ Middleware & Proxy
+✅ Advanced Topics (i18n, streaming, testing, etc.)
+
+### New Advanced Topics (Q68-Q95):
+
+✅ **Environment Variables** - Configuration, typed env, loading in tests
+✅ **Font Optimization** - Google Fonts, local fonts, multiple fonts, CSS variables
+✅ **Script Optimization** - Loading strategies, inline scripts, web workers, events
+✅ **Security & Headers** - CSP with/without nonces, security headers, header filtering
+✅ **Production & Deployment** - Build options, CI/CD cache, custom hooks, container deployment
+✅ **Performance Deep Dive** - Lazy loading, code splitting, bundle optimization, prefetching
+✅ **Advanced Patterns** - Repository pattern, Service layer, custom hooks, error boundaries
+✅ **TypeScript Best Practices** - Proper typing for pages, layouts, routes, actions
+✅ **Logging & Monitoring** - Server logging, error tracking, Web Vitals, analytics
+✅ **Database Patterns** - Connection pooling, Prisma setup, graceful shutdown
+✅ **Rate Limiting** - In-memory and Redis-based implementations
+
+**Total Coverage:** 95 questions with practical, production-ready code examples based on official Next.js v16.0.3 documentation!
