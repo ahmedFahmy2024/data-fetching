@@ -18,6 +18,10 @@
 11. [Activity Component & Selective Hydration](#activity-component--selective-hydration)
 12. [Resource Preloading & Document Metadata](#resource-preloading--document-metadata)
 13. [Breaking Changes & Migration](#breaking-changes--migration)
+14. [Advanced Hooks & APIs](#advanced-hooks--apis)
+15. [Testing & Best Practices](#testing--best-practices)
+16. [Code Splitting & Performance](#code-splitting--performance)
+17. [Portals & Advanced Patterns](#portals--advanced-patterns)
 
 ---
 
@@ -2392,9 +2396,1429 @@ function Component() {
 
 ---
 
+## Advanced Hooks & APIs
+
+### Q29: What is useSyncExternalStore and when should you use it?
+
+**Answer:**
+`useSyncExternalStore` lets you subscribe to external stores (like Redux, Zustand, or browser APIs) while supporting concurrent rendering.
+
+**Basic usage:**
+
+```javascript
+import { useSyncExternalStore } from 'react';
+
+const snapshot = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot?);
+```
+
+**Custom hook for browser API:**
+
+```javascript
+import { useSyncExternalStore } from "react";
+
+function subscribe(callback) {
+  window.addEventListener("online", callback);
+  window.addEventListener("offline", callback);
+
+  return () => {
+    window.removeEventListener("online", callback);
+    window.removeEventListener("offline", callback);
+  };
+}
+
+function useOnlineStatus() {
+  return useSyncExternalStore(
+    subscribe, // Subscribe function
+    () => navigator.onLine, // Client snapshot
+    () => true // Server snapshot
+  );
+}
+
+// Usage
+function StatusBar() {
+  const isOnline = useOnlineStatus();
+  return <h1>{isOnline ? "✅ Online" : "❌ Disconnected"}</h1>;
+}
+```
+
+**External store example:**
+
+```javascript
+// Store implementation
+let listeners = [];
+let state = { count: 0 };
+
+const store = {
+  subscribe(listener) {
+    listeners.push(listener);
+    return () => {
+      listeners = listeners.filter((l) => l !== listener);
+    };
+  },
+
+  getSnapshot() {
+    return state;
+  },
+
+  increment() {
+    state = { count: state.count + 1 };
+    listeners.forEach((listener) => listener());
+  },
+};
+
+// Component using the store
+function Counter() {
+  const state = useSyncExternalStore(store.subscribe, store.getSnapshot);
+
+  return (
+    <div>
+      <p>Count: {state.count}</p>
+      <button onClick={store.increment}>Increment</button>
+    </div>
+  );
+}
+```
+
+**Key points:**
+
+- `getSnapshot` must return immutable data
+- Use `Object.is` for comparison
+- Required for external stores with concurrent rendering
+- Prevents "tearing" (inconsistent UI state)
+
+**When to use:**
+
+- Integrating with Redux, Zustand, MobX
+- Subscribing to browser APIs (navigator, window)
+- Custom external state management
+- Third-party libraries
+
+### Q30: What is useLayoutEffect and how does it differ from useEffect?
+
+**Answer:**
+`useLayoutEffect` fires synchronously after DOM mutations but before the browser paints, while `useEffect` fires after paint.
+
+**Comparison:**
+
+```javascript
+import { useEffect, useLayoutEffect } from "react";
+
+function Component() {
+  // Fires AFTER browser paint (asynchronous)
+  useEffect(() => {
+    console.log("useEffect runs");
+  });
+
+  // Fires BEFORE browser paint (synchronous)
+  useLayoutEffect(() => {
+    console.log("useLayoutEffect runs first");
+  });
+}
+```
+
+**Measuring DOM elements:**
+
+```javascript
+function Tooltip() {
+  const ref = useRef(null);
+  const [tooltipHeight, setTooltipHeight] = useState(0);
+
+  useLayoutEffect(() => {
+    const { height } = ref.current.getBoundingClientRect();
+    setTooltipHeight(height); // Re-render before paint
+  }, []);
+
+  // Use tooltipHeight for positioning
+  return <div ref={ref}>Tooltip content</div>;
+}
+```
+
+**Dynamic positioning example:**
+
+```javascript
+function Tooltip({ targetRect, children }) {
+  const ref = useRef(null);
+  const [tooltipHeight, setTooltipHeight] = useState(0);
+
+  useLayoutEffect(() => {
+    const { height } = ref.current.getBoundingClientRect();
+    setTooltipHeight(height);
+  }, []);
+
+  let tooltipY = targetRect.top - tooltipHeight;
+
+  // If doesn't fit above, place below
+  if (tooltipY < 0) {
+    tooltipY = targetRect.bottom;
+  }
+
+  return (
+    <div
+      ref={ref}
+      style={{
+        position: "absolute",
+        top: tooltipY,
+        left: targetRect.left,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+```
+
+**SSR considerations:**
+
+```javascript
+// ❌ Causes warning on server
+function Component() {
+  useLayoutEffect(() => {
+    // Server doesn't have DOM
+  }, []);
+}
+
+// ✅ Conditional rendering for client-only
+function Component() {
+  const [isMounted, setIsMounted] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  if (!isMounted) {
+    return <FallbackContent />;
+  }
+
+  return <ContentWithLayoutEffect />;
+}
+```
+
+**When to use useLayoutEffect:**
+
+- Measuring DOM elements
+- Positioning tooltips/popovers
+- Scroll position management
+- Preventing visual flicker
+- Synchronous DOM reads/writes
+
+**When to use useEffect:**
+
+- Data fetching
+- Subscriptions
+- Logging
+- Most side effects
+- Anything that doesn't need to block paint
+
+### Q31: What is flushSync and when should you use it?
+
+**Answer:**
+`flushSync` forces React to flush updates synchronously and update the DOM immediately.
+
+**Basic usage:**
+
+```javascript
+import { flushSync } from "react-dom";
+
+flushSync(() => {
+  setSomething(123);
+});
+// DOM is updated by this line
+```
+
+**Scroll to new item example:**
+
+```javascript
+import { useState, useRef } from "react";
+import { flushSync } from "react-dom";
+
+function TodoList() {
+  const listRef = useRef(null);
+  const [todos, setTodos] = useState([]);
+  const [text, setText] = useState("");
+
+  function handleAdd() {
+    const newTodo = { id: Date.now(), text };
+
+    // Force synchronous update
+    flushSync(() => {
+      setText("");
+      setTodos([...todos, newTodo]);
+    });
+
+    // DOM is updated, can scroll immediately
+    listRef.current.lastChild.scrollIntoView({
+      behavior: "smooth",
+      block: "nearest",
+    });
+  }
+
+  return (
+    <>
+      <input value={text} onChange={(e) => setText(e.target.value)} />
+      <button onClick={handleAdd}>Add</button>
+      <ul ref={listRef}>
+        {todos.map((todo) => (
+          <li key={todo.id}>{todo.text}</li>
+        ))}
+      </ul>
+    </>
+  );
+}
+```
+
+**Multiple updates:**
+
+```javascript
+function handleClick() {
+  flushSync(() => {
+    setCounter((c) => c + 1);
+  });
+  // DOM updated
+
+  flushSync(() => {
+    setFlag((f) => !f);
+  });
+  // DOM updated again
+}
+```
+
+**When to use:**
+
+- Need immediate DOM access after state update
+- Scroll to newly added elements
+- Focus management
+- Third-party library integration
+- Measuring DOM after update
+
+**When NOT to use:**
+
+- ❌ Inside useEffect (causes warning)
+- ❌ For performance optimization (hurts performance)
+- ❌ As default pattern (use sparingly)
+
+**Correct vs Incorrect:**
+
+```javascript
+// ✅ Correct: In event handler
+function handleClick() {
+  flushSync(() => {
+    setSomething(newValue);
+  });
+}
+
+// ❌ Wrong: In useEffect
+useEffect(() => {
+  flushSync(() => {
+    setSomething(newValue); // Warning!
+  });
+}, []);
+```
+
+**Caveats:**
+
+- Significantly hurts performance
+- May force Suspense fallbacks to show
+- Runs pending effects synchronously
+- May flush updates outside callback
+
+### Q32: What is startTransition and how does it work?
+
+**Answer:**
+`startTransition` marks state updates as non-urgent transitions without needing the `useTransition` hook.
+
+**Basic usage:**
+
+```javascript
+import { startTransition } from "react";
+
+function TabContainer() {
+  const [tab, setTab] = useState("about");
+
+  function selectTab(nextTab) {
+    startTransition(() => {
+      setTab(nextTab);
+    });
+  }
+
+  return (
+    <div>
+      <button onClick={() => selectTab("about")}>About</button>
+      <button onClick={() => selectTab("posts")}>Posts</button>
+      {tab === "about" && <AboutTab />}
+      {tab === "posts" && <PostsTab />}
+    </div>
+  );
+}
+```
+
+**Difference from useTransition:**
+
+```javascript
+// With useTransition (has isPending)
+function Component() {
+  const [isPending, startTransition] = useTransition();
+
+  return (
+    <button onClick={() => startTransition(() => setTab("posts"))}>
+      {isPending ? "Loading..." : "Posts"}
+    </button>
+  );
+}
+
+// With startTransition (no isPending)
+import { startTransition } from "react";
+
+function Component() {
+  return (
+    <button onClick={() => startTransition(() => setTab("posts"))}>
+      Posts
+    </button>
+  );
+}
+```
+
+**With async operations:**
+
+```javascript
+function UpdateButton() {
+  const [name, setName] = useState("");
+
+  function handleSubmit() {
+    startTransition(async () => {
+      const result = await updateName(name);
+      if (result.error) {
+        setError(result.error);
+      } else {
+        setName("");
+      }
+    });
+  }
+
+  return <button onClick={handleSubmit}>Update</button>;
+}
+```
+
+**Benefits:**
+
+- Keeps UI responsive during slow updates
+- Can be interrupted by urgent updates
+- No need for isPending if you don't need it
+- Works with Suspense
+
+**When to use:**
+
+- Navigation
+- Tab switching
+- Filtering/searching
+- Any non-urgent UI update
+
+---
+
+## Testing & Best Practices
+
+### Q33: What are React's ESLint rules and why are they important?
+
+**Answer:**
+React provides ESLint rules to catch common mistakes and enforce best practices.
+
+**Key rules:**
+
+**1. rules-of-hooks:**
+
+```javascript
+// ❌ Wrong: Conditional hook
+function Component({ condition }) {
+  if (condition) {
+    const [state, setState] = useState(0); // Error!
+  }
+}
+
+// ✅ Correct: Hook at top level
+function Component({ condition }) {
+  const [state, setState] = useState(0);
+
+  if (condition) {
+    // Use state here
+  }
+}
+```
+
+**2. exhaustive-deps:**
+
+```javascript
+// ❌ Wrong: Missing dependency
+function Component({ userId }) {
+  useEffect(() => {
+    fetchUser(userId); // userId not in deps
+  }, []); // Warning!
+}
+
+// ✅ Correct: Include all dependencies
+function Component({ userId }) {
+  useEffect(() => {
+    fetchUser(userId);
+  }, [userId]);
+}
+```
+
+**3. Custom hook naming:**
+
+```javascript
+// ❌ Wrong: Doesn't start with 'use'
+function getUser() {
+  const [user, setUser] = useState(null); // Error!
+  return user;
+}
+
+// ✅ Correct: Starts with 'use'
+function useUser() {
+  const [user, setUser] = useState(null);
+  return user;
+}
+```
+
+**Setup:**
+
+```json
+{
+  "extends": ["plugin:react-hooks/recommended"],
+  "plugins": ["react-hooks"],
+  "rules": {
+    "react-hooks/rules-of-hooks": "error",
+    "react-hooks/exhaustive-deps": "warn"
+  }
+}
+```
+
+### Q34: What are custom hooks best practices?
+
+**Answer:**
+
+**1. Naming convention:**
+
+```javascript
+// ✅ Always start with 'use'
+function useWindowSize() {}
+function useLocalStorage() {}
+function useFetch() {}
+```
+
+**2. Single responsibility:**
+
+```javascript
+// ✅ Good: Focused hook
+function useOnlineStatus() {
+  const [isOnline, setIsOnline] = useState(true);
+
+  useEffect(() => {
+    function handleOnline() {
+      setIsOnline(true);
+    }
+    function handleOffline() {
+      setIsOnline(false);
+    }
+
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
+
+  return isOnline;
+}
+```
+
+**3. Return consistent values:**
+
+```javascript
+// ✅ Good: Consistent return type
+function useUser(userId) {
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    fetchUser(userId)
+      .then(setUser)
+      .catch(setError)
+      .finally(() => setLoading(false));
+  }, [userId]);
+
+  return { user, loading, error };
+}
+```
+
+**4. Composable hooks:**
+
+```javascript
+function useAuth() {
+  const user = useUser();
+  const permissions = usePermissions(user?.id);
+
+  return { user, permissions };
+}
+```
+
+**5. Testing custom hooks:**
+
+```javascript
+import { renderHook, act } from "@testing-library/react";
+import { useCounter } from "./useCounter";
+
+test("should increment counter", () => {
+  const { result } = renderHook(() => useCounter());
+
+  act(() => {
+    result.current.increment();
+  });
+
+  expect(result.current.count).toBe(1);
+});
+```
+
+### Q35: What is StrictMode and what does it do in React 19?
+
+**Answer:**
+`StrictMode` helps find bugs by intentionally double-rendering components and running effects twice in development.
+
+**Basic usage:**
+
+```javascript
+import { StrictMode } from "react";
+import { createRoot } from "react-dom/client";
+
+const root = createRoot(document.getElementById("root"));
+root.render(
+  <StrictMode>
+    <App />
+  </StrictMode>
+);
+```
+
+**What it detects:**
+
+**1. Impure components:**
+
+```javascript
+// ❌ Bug: Mutating props
+function StoryTray({ stories }) {
+  stories.push({ id: "create", label: "Create Story" }); // Mutation!
+  return (
+    <ul>
+      {stories.map((s) => (
+        <li key={s.id}>{s.label}</li>
+      ))}
+    </ul>
+  );
+}
+
+// ✅ Fixed: Clone before mutating
+function StoryTray({ stories }) {
+  const items = stories.slice(); // Clone
+  items.push({ id: "create", label: "Create Story" });
+  return (
+    <ul>
+      {items.map((s) => (
+        <li key={s.id}>{s.label}</li>
+      ))}
+    </ul>
+  );
+}
+```
+
+**2. Effect cleanup issues:**
+
+```javascript
+// ❌ Bug: No cleanup
+useEffect(() => {
+  const connection = createConnection();
+  connection.connect();
+  // Missing cleanup - StrictMode will show the bug
+}, []);
+
+// ✅ Fixed: Proper cleanup
+useEffect(() => {
+  const connection = createConnection();
+  connection.connect();
+
+  return () => {
+    connection.disconnect(); // Cleanup
+  };
+}, []);
+```
+
+**3. Activity boundary issues (React 19):**
+
+```javascript
+// StrictMode tests Activity unmount/mount
+<StrictMode>
+  <Activity mode="visible">
+    <Component /> {/* Will unmount/mount to test cleanup */}
+  </Activity>
+</StrictMode>
+```
+
+**What StrictMode does:**
+
+- Double-renders components (development only)
+- Runs effects twice (mount → unmount → mount)
+- Tests Activity boundaries
+- Warns about deprecated APIs
+- Checks for unexpected side effects
+
+**Production behavior:**
+
+- All checks are disabled in production
+- No performance impact
+- Only affects development
+
+**Benefits:**
+
+- Catches bugs early
+- Ensures proper cleanup
+- Prepares for concurrent features
+- Enforces best practices
+
+---
+
+## Code Splitting & Performance
+
+### Q36: How does lazy() work for code splitting?
+
+**Answer:**
+`lazy()` lets you defer loading component code until it's first rendered, reducing initial bundle size.
+
+**Basic usage:**
+
+```javascript
+import { lazy, Suspense } from "react";
+
+// ❌ Static import - loads immediately
+import MarkdownPreview from "./MarkdownPreview.js";
+
+// ✅ Dynamic import - loads on demand
+const MarkdownPreview = lazy(() => import("./MarkdownPreview.js"));
+
+function Editor() {
+  return (
+    <Suspense fallback={<Loading />}>
+      <MarkdownPreview />
+    </Suspense>
+  );
+}
+```
+
+**Multiple lazy components:**
+
+```javascript
+import { lazy, Suspense } from "react";
+
+const AdminPanel = lazy(() => import("./AdminPanel.js"));
+const Dashboard = lazy(() => import("./Dashboard.js"));
+const Settings = lazy(() => import("./Settings.js"));
+
+function App() {
+  const [tab, setTab] = useState("dashboard");
+
+  return (
+    <div>
+      <button onClick={() => setTab("dashboard")}>Dashboard</button>
+      <button onClick={() => setTab("admin")}>Admin</button>
+      <button onClick={() => setTab("settings")}>Settings</button>
+
+      <Suspense fallback={<Loading />}>
+        {tab === "dashboard" && <Dashboard />}
+        {tab === "admin" && <AdminPanel />}
+        {tab === "settings" && <Settings />}
+      </Suspense>
+    </div>
+  );
+}
+```
+
+**Route-based code splitting:**
+
+```javascript
+import { lazy, Suspense } from "react";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
+
+const Home = lazy(() => import("./pages/Home"));
+const About = lazy(() => import("./pages/About"));
+const Contact = lazy(() => import("./pages/Contact"));
+
+function App() {
+  return (
+    <BrowserRouter>
+      <Suspense fallback={<PageLoader />}>
+        <Routes>
+          <Route path="/" element={<Home />} />
+          <Route path="/about" element={<About />} />
+          <Route path="/contact" element={<Contact />} />
+        </Routes>
+      </Suspense>
+    </BrowserRouter>
+  );
+}
+```
+
+**Optimized with React Router (recommended):**
+
+```javascript
+import { createBrowserRouter } from "react-router-dom";
+
+// ✅ Routes downloaded before rendering (parallel with data)
+const router = createBrowserRouter([
+  {
+    path: "/",
+    lazy: () => import("./pages/Home"),
+  },
+  {
+    path: "/dashboard",
+    lazy: () => import("./pages/Dashboard"),
+  },
+]);
+```
+
+**Error handling:**
+
+```javascript
+import { lazy, Suspense } from "react";
+import ErrorBoundary from "./ErrorBoundary";
+
+const HeavyComponent = lazy(() => import("./HeavyComponent"));
+
+function App() {
+  return (
+    <ErrorBoundary fallback={<div>Failed to load component</div>}>
+      <Suspense fallback={<Loading />}>
+        <HeavyComponent />
+      </Suspense>
+    </ErrorBoundary>
+  );
+}
+```
+
+**Requirements:**
+
+- Must be wrapped in `<Suspense>`
+- Component must be default export
+- Returns a Promise that resolves to a module with `.default`
+
+**Benefits:**
+
+- Smaller initial bundle
+- Faster initial load
+- Load code on demand
+- Better performance
+
+### Q37: What is useId and when should you use it?
+
+**Answer:**
+`useId` generates unique IDs for accessibility attributes, preventing conflicts when components are rendered multiple times.
+
+**Basic usage:**
+
+```javascript
+import { useId } from "react";
+
+function PasswordField() {
+  const passwordHintId = useId();
+
+  return (
+    <>
+      <label>
+        Password:
+        <input type="password" aria-describedby={passwordHintId} />
+      </label>
+      <p id={passwordHintId}>
+        The password should contain at least 18 characters
+      </p>
+    </>
+  );
+}
+```
+
+**Multiple IDs in one component:**
+
+```javascript
+function Form() {
+  const id = useId();
+
+  return (
+    <form>
+      <label htmlFor={`${id}-name`}>Name:</label>
+      <input id={`${id}-name`} type="text" />
+
+      <label htmlFor={`${id}-email`}>Email:</label>
+      <input id={`${id}-email`} type="email" />
+
+      <label htmlFor={`${id}-password`}>Password:</label>
+      <input id={`${id}-password`} type="password" />
+    </form>
+  );
+}
+```
+
+**Why not hardcode IDs:**
+
+```javascript
+// ❌ Bad: Hardcoded IDs cause conflicts
+function PasswordField() {
+  return (
+    <>
+      <input type="password" aria-describedby="password-hint" />
+      <p id="password-hint">Must be 18 characters</p>
+    </>
+  );
+}
+
+// If rendered twice, both have same ID!
+<PasswordField />
+<PasswordField /> // ID conflict!
+
+// ✅ Good: useId prevents conflicts
+function PasswordField() {
+  const id = useId();
+  return (
+    <>
+      <input type="password" aria-describedby={id} />
+      <p id={id}>Must be 18 characters</p>
+    </>
+  );
+}
+
+<PasswordField /> // id: :r1:
+<PasswordField /> // id: :r2: (unique!)
+```
+
+**With lists:**
+
+```javascript
+function CheckboxList({ items }) {
+  const baseId = useId();
+
+  return (
+    <ul>
+      {items.map((item, index) => {
+        const id = `${baseId}-${index}`;
+        return (
+          <li key={item.id}>
+            <input type="checkbox" id={id} />
+            <label htmlFor={id}>{item.label}</label>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+```
+
+**SSR compatibility:**
+
+```javascript
+// useId generates same IDs on server and client
+function Component() {
+  const id = useId();
+  // Server: :r1:
+  // Client: :r1: (matches!)
+  return <div id={id}>Content</div>;
+}
+```
+
+**When to use:**
+
+- Accessibility attributes (aria-describedby, aria-labelledby)
+- Linking labels to inputs
+- Any case needing unique IDs
+- SSR applications
+
+**When NOT to use:**
+
+- Keys in lists (use stable IDs from data)
+- CSS selectors (use classes)
+- Non-accessibility purposes
+
+### Q38: What is useDebugValue and how do you use it?
+
+**Answer:**
+`useDebugValue` displays custom labels for custom hooks in React DevTools.
+
+**Basic usage:**
+
+```javascript
+import { useDebugValue } from "react";
+
+function useOnlineStatus() {
+  const isOnline = useSyncExternalStore(
+    subscribe,
+    () => navigator.onLine,
+    () => true
+  );
+
+  // Shows "Online" or "Offline" in DevTools
+  useDebugValue(isOnline ? "Online" : "Offline");
+
+  return isOnline;
+}
+```
+
+**With formatting function:**
+
+```javascript
+import { useDebugValue } from "react";
+
+function useDate() {
+  const date = new Date();
+
+  // Defer expensive formatting until DevTools is open
+  useDebugValue(date, (date) => date.toDateString());
+
+  return date;
+}
+```
+
+**Complex custom hook:**
+
+```javascript
+function useUser(userId) {
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchUser(userId)
+      .then(setUser)
+      .finally(() => setLoading(false));
+  }, [userId]);
+
+  // Show user info in DevTools
+  useDebugValue(user, (user) =>
+    user ? `${user.name} (${user.email})` : "No user"
+  );
+
+  return { user, loading };
+}
+```
+
+**Multiple debug values:**
+
+```javascript
+function useAuth() {
+  const [user, setUser] = useState(null);
+  const [permissions, setPermissions] = useState([]);
+
+  useDebugValue(user, (user) => user?.name ?? "Not logged in");
+  useDebugValue(permissions, (perms) => `${perms.length} permissions`);
+
+  return { user, permissions };
+}
+```
+
+**When to use:**
+
+- Custom hooks that are part of shared libraries
+- Complex state that's hard to inspect
+- Debugging custom hook behavior
+- Team collaboration
+
+**When NOT to use:**
+
+- Every custom hook (adds noise)
+- Simple hooks with obvious state
+- Production code (no effect, but unnecessary)
+
+---
+
+## Portals & Advanced Patterns
+
+### Q39: What is createPortal and when should you use it?
+
+**Answer:**
+`createPortal` renders children into a DOM node outside the parent component's hierarchy.
+
+**Basic usage:**
+
+```javascript
+import { createPortal } from "react-dom";
+
+function Modal({ children, isOpen }) {
+  if (!isOpen) return null;
+
+  return createPortal(
+    <div className="modal-overlay">
+      <div className="modal-content">{children}</div>
+    </div>,
+    document.body // Render into body, not parent
+  );
+}
+```
+
+**Complete modal example:**
+
+```javascript
+import { useState } from "react";
+import { createPortal } from "react-dom";
+
+function Modal({ children, onClose }) {
+  return createPortal(
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <button onClick={onClose}>×</button>
+        {children}
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+function App() {
+  const [showModal, setShowModal] = useState(false);
+
+  return (
+    <div style={{ position: "relative", zIndex: 1 }}>
+      <button onClick={() => setShowModal(true)}>Open Modal</button>
+
+      {showModal && (
+        <Modal onClose={() => setShowModal(false)}>
+          <h2>Modal Content</h2>
+          <p>This renders in document.body!</p>
+        </Modal>
+      )}
+    </div>
+  );
+}
+```
+
+**Tooltip with portal:**
+
+```javascript
+import { useState, useRef } from "react";
+import { createPortal } from "react-dom";
+
+function Tooltip({ children, text }) {
+  const [show, setShow] = useState(false);
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const ref = useRef(null);
+
+  const handleMouseEnter = (e) => {
+    const rect = e.target.getBoundingClientRect();
+    setPosition({ x: rect.left, y: rect.top - 30 });
+    setShow(true);
+  };
+
+  return (
+    <>
+      <span
+        ref={ref}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={() => setShow(false)}
+      >
+        {children}
+      </span>
+
+      {show &&
+        createPortal(
+          <div
+            style={{
+              position: "fixed",
+              left: position.x,
+              top: position.y,
+              background: "black",
+              color: "white",
+              padding: "4px 8px",
+              borderRadius: "4px",
+            }}
+          >
+            {text}
+          </div>,
+          document.body
+        )}
+    </>
+  );
+}
+```
+
+**Integrating with third-party libraries:**
+
+```javascript
+import { useRef, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
+import { createMapWidget, addPopupToMapWidget } from "./map-widget.js";
+
+function Map() {
+  const containerRef = useRef(null);
+  const mapRef = useRef(null);
+  const [popupContainer, setPopupContainer] = useState(null);
+
+  useEffect(() => {
+    if (mapRef.current === null) {
+      const map = createMapWidget(containerRef.current);
+      mapRef.current = map;
+      const popupDiv = addPopupToMapWidget(map);
+      setPopupContainer(popupDiv);
+    }
+  }, []);
+
+  return (
+    <div style={{ width: 250, height: 250 }} ref={containerRef}>
+      {popupContainer !== null &&
+        createPortal(<p>Hello from React!</p>, popupContainer)}
+    </div>
+  );
+}
+```
+
+**Event bubbling through portals:**
+
+```javascript
+function Parent() {
+  return (
+    <div onClick={() => console.log("Parent clicked")}>
+      <Child />
+    </div>
+  );
+}
+
+function Child() {
+  // Even though rendered in document.body,
+  // clicks still bubble to Parent!
+  return createPortal(<button>Click me</button>, document.body);
+}
+```
+
+**When to use:**
+
+- Modals and dialogs
+- Tooltips and popovers
+- Notifications/toasts
+- Dropdown menus
+- Any UI that needs to escape parent overflow/z-index
+
+**Benefits:**
+
+- Escape CSS constraints (overflow, z-index)
+- Maintain React event bubbling
+- Keep component hierarchy logical
+- Better accessibility
+
+### Q40: What are real-world performance optimization patterns?
+
+**Answer:**
+
+**1. Virtualization for long lists:**
+
+```javascript
+import { useVirtualizer } from "@tanstack/react-virtual";
+
+function VirtualList({ items }) {
+  const parentRef = useRef(null);
+
+  const virtualizer = useVirtualizer({
+    count: items.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 50,
+  });
+
+  return (
+    <div ref={parentRef} style={{ height: "400px", overflow: "auto" }}>
+      <div style={{ height: virtualizer.getTotalSize() }}>
+        {virtualizer.getVirtualItems().map((virtualRow) => (
+          <div
+            key={virtualRow.index}
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              width: "100%",
+              transform: `translateY(${virtualRow.start}px)`,
+            }}
+          >
+            {items[virtualRow.index].name}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+```
+
+**2. Debouncing expensive operations:**
+
+```javascript
+import { useState, useMemo } from "react";
+import { useDebouncedValue } from "./useDebouncedValue";
+
+function SearchResults() {
+  const [query, setQuery] = useState("");
+  const deferredQuery = useDebouncedValue(query, 300);
+
+  const results = useMemo(() => {
+    return expensiveSearch(deferredQuery);
+  }, [deferredQuery]);
+
+  return (
+    <>
+      <input value={query} onChange={(e) => setQuery(e.target.value)} />
+      <Results data={results} />
+    </>
+  );
+}
+```
+
+**3. Intersection Observer for lazy loading:**
+
+```javascript
+import { useEffect, useRef, useState } from "react";
+
+function LazyImage({ src, alt }) {
+  const [isVisible, setIsVisible] = useState(false);
+  const imgRef = useRef(null);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setIsVisible(true);
+          observer.disconnect();
+        }
+      },
+      { threshold: 0.1 }
+    );
+
+    if (imgRef.current) {
+      observer.observe(imgRef.current);
+    }
+
+    return () => observer.disconnect();
+  }, []);
+
+  return (
+    <div ref={imgRef}>
+      {isVisible ? (
+        <img src={src} alt={alt} />
+      ) : (
+        <div style={{ height: 200, background: "#eee" }} />
+      )}
+    </div>
+  );
+}
+```
+
+**4. Infinite scroll:**
+
+```javascript
+function InfiniteList() {
+  const [items, setItems] = useState([]);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const observerRef = useRef(null);
+
+  useEffect(() => {
+    fetchItems(page).then((newItems) => {
+      setItems((prev) => [...prev, ...newItems]);
+      setHasMore(newItems.length > 0);
+    });
+  }, [page]);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && hasMore) {
+          setPage((p) => p + 1);
+        }
+      },
+      { threshold: 1.0 }
+    );
+
+    if (observerRef.current) {
+      observer.observe(observerRef.current);
+    }
+
+    return () => observer.disconnect();
+  }, [hasMore]);
+
+  return (
+    <div>
+      {items.map((item) => (
+        <div key={item.id}>{item.name}</div>
+      ))}
+      {hasMore && <div ref={observerRef}>Loading...</div>}
+    </div>
+  );
+}
+```
+
+**5. Memoizing expensive calculations:**
+
+```javascript
+function DataTable({ data, filters }) {
+  // Only recalculate when data or filters change
+  const filteredData = useMemo(() => {
+    return data.filter((item) => {
+      return Object.entries(filters).every(([key, value]) => {
+        return item[key] === value;
+      });
+    });
+  }, [data, filters]);
+
+  const sortedData = useMemo(() => {
+    return [...filteredData].sort((a, b) => a.name.localeCompare(b.name));
+  }, [filteredData]);
+
+  return (
+    <table>
+      {sortedData.map((row) => (
+        <tr key={row.id}>
+          <td>{row.name}</td>
+        </tr>
+      ))}
+    </table>
+  );
+}
+```
+
+**6. Optimistic updates with error recovery:**
+
+```javascript
+function TodoList() {
+  const [todos, setTodos] = useState([]);
+  const [optimisticTodos, addOptimisticTodo] = useOptimistic(
+    todos,
+    (state, newTodo) => [...state, { ...newTodo, pending: true }]
+  );
+
+  async function addTodo(text) {
+    const tempId = Date.now();
+    addOptimisticTodo({ id: tempId, text });
+
+    try {
+      const savedTodo = await api.createTodo(text);
+      setTodos((prev) => [...prev, savedTodo]);
+    } catch (error) {
+      // Optimistic update automatically reverted
+      showError("Failed to add todo");
+    }
+  }
+
+  return (
+    <ul>
+      {optimisticTodos.map((todo) => (
+        <li key={todo.id} style={{ opacity: todo.pending ? 0.5 : 1 }}>
+          {todo.text}
+        </li>
+      ))}
+    </ul>
+  );
+}
+```
+
+---
+
 ## Summary
 
-This comprehensive React 19 interview guide covers **28 detailed questions** on:
+This comprehensive React 19 interview guide covers **40 detailed questions** on:
 
 ✅ **React 19 New Features** - use(), Server Components, Actions, new hooks
 ✅ **Hooks Fundamentals** - useState, useEffect, best practices
@@ -2410,5 +3834,12 @@ This comprehensive React 19 interview guide covers **28 detailed questions** on:
 ✅ **Resource Preloading** - prefetchDNS, preconnect, preload, preinit
 ✅ **Document Metadata** - Automatic hoisting, deduplication
 ✅ **Breaking Changes** - Migration guide, removed APIs, codemods
+✅ **Advanced APIs** - useSyncExternalStore, useLayoutEffect, flushSync, startTransition
+✅ **Testing & Best Practices** - ESLint rules, custom hooks, StrictMode
+✅ **Code Splitting** - lazy(), Suspense, route-based splitting
+✅ **Accessibility** - useId for unique IDs
+✅ **Debugging** - useDebugValue for custom hooks
+✅ **Portals** - createPortal for modals, tooltips
+✅ **Real-World Patterns** - Virtualization, infinite scroll, lazy loading, optimistic updates
 
 All examples are based on **official React 19 documentation** fetched via Context7 MCP! 🎉
