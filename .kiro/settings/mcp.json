@@ -14,7 +14,8 @@
         "get-library-docs",
         "get-library-docs",
         "get-library-docs",
-        "get-library-docs"
+        "get-library-docs",
+        "resolve-library-id"
       ]
     }
   }
